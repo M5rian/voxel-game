@@ -1,6 +1,6 @@
-use std::iter;
+use std::{iter, collections::HashMap};
 
-use cgmath::prelude::*;
+use cgmath::{prelude::*, Vector3, Quaternion};
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -12,10 +12,9 @@ mod camera;
 mod model;
 mod resources;
 mod texture;
+mod block;
 
-use model::{DrawLight, DrawModel, Vertex};
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
+use model::{DrawModel, Vertex};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -38,6 +37,7 @@ impl CameraUniform {
     }
 }
 
+#[derive(Clone)]
 struct Instance {
     position: cgmath::Vector3<f32>,
     rotation: cgmath::Quaternion<f32>,
@@ -133,16 +133,12 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    obj_model: model::Model,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    instances: Vec<Instance>,
-    #[allow(dead_code)]
-    instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
     size: winit::dpi::PhysicalSize<u32>,
     light_uniform: LightUniform,
@@ -151,6 +147,9 @@ struct State {
     light_render_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     debug_material: model::Material,
+    instance_buffer: wgpu::Buffer,
+    block_entites: HashMap<Vector3<i32>, Instance>,
+    obj_model: model::Model
 }
 
 fn create_render_pipeline(
@@ -316,32 +315,6 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        const SPACE_BETWEEN: f32 = 2.0;
-        let instances = (0..NUM_INSTANCES_PER_ROW)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let x = SPACE_BETWEEN * (x as f32);
-                    let z = SPACE_BETWEEN * (z as f32);
-
-                    let position = cgmath::Vector3 { x, y: 0.0, z };
-
-                    let rotation = cgmath::Quaternion::from_axis_angle(
-                        cgmath::Vector3::unit_z(),
-                        cgmath::Deg(0.0),
-                    );
-
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -365,11 +338,6 @@ impl State {
             }],
             label: Some("camera_bind_group"),
         });
-
-        let obj_model =
-            resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
-                .await
-                .unwrap();
 
         let light_uniform = LightUniform {
             position: [2.0, 2.0, 2.0],
@@ -478,6 +446,31 @@ impl State {
             )
         };
 
+        let obj_model =
+        resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
+            .await
+            .unwrap();
+        let mut blocks:HashMap<Vector3<i32>, Instance> = HashMap::new();
+        for x in 0..100 {
+            for z in 0..100 {
+                let position = Vector3 { x: x * 2, y: 0, z: z * 2};
+                let position_exact = Vector3 {
+                    x: x as f32 *2.0 ,
+                    y: 0.0,
+                    z: z as f32 * 2.0
+                };
+                let instance = Instance { position: position_exact, rotation: Quaternion::zero() };
+                blocks.insert(position, instance);
+            }
+        }
+
+        let instance_data = blocks.values().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         Self {
             window,
             surface,
@@ -485,15 +478,12 @@ impl State {
             queue,
             config,
             render_pipeline,
-            obj_model,
             camera,
             projection,
             camera_controller,
             camera_buffer,
             camera_bind_group,
             camera_uniform,
-            instances,
-            instance_buffer,
             depth_texture,
             size,
             light_uniform,
@@ -502,6 +492,10 @@ impl State {
             light_render_pipeline,
             #[allow(dead_code)]
             debug_material,
+            // Block rendering stuff
+            instance_buffer,
+            block_entites: blocks,
+            obj_model,
         }
     }
 
@@ -522,7 +516,6 @@ impl State {
         }
     }
 
-    // UPDATED!
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
@@ -543,7 +536,6 @@ impl State {
     }
 
     fn update(&mut self, dt: std::time::Duration) {
-        // UPDATED!
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
@@ -605,17 +597,12 @@ impl State {
             });
 
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-            );
 
             render_pass.set_pipeline(&self.render_pipeline);
+            let block_instances = self.block_entites.values();
             render_pass.draw_model_instanced(
                 &self.obj_model,
-                0..self.instances.len() as u32,
+                0..block_instances.len() as u32,
                 &self.camera_bind_group,
                 &self.light_bind_group,
             );
@@ -638,6 +625,7 @@ pub async fn run() {
 
     let mut state = State::new(window).await;
     let mut last_render_time = std::time::Instant::now();
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
