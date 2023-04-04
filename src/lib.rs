@@ -1,4 +1,4 @@
-use std::{iter, collections::HashMap};
+use std::{iter, collections::HashMap, ops::Add};
 
 use cgmath::{prelude::*, Vector3, Quaternion};
 use wgpu::util::DeviceExt;
@@ -304,7 +304,7 @@ impl State {
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection =
             camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 3.5);
+        let camera_controller = camera::CameraController::new(14.0, 3.5);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &projection);
@@ -545,6 +545,24 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
+        // Get block player is looking at
+        let (pitch_sin, pitch_cos) = self.camera.pitch().sin_cos();
+        let (yaw_sin, yaw_cos) = self.camera.yaw().sin_cos();
+        let forward = Vector3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize();
+        let player_position = self.camera.position;
+        let player_radius = 8;
+        
+        let mut ray_coords = Vector3::new(player_position.x,player_position.y,player_position.z);
+        for _ in 0..player_radius {
+            ray_coords =  ray_coords.add(forward);
+            let pos = ray_coords.map(|value| value.round() as i32);
+            if self.block_entites.contains_key(&pos) {
+                println!("found block");
+                self.block_entites.remove(&pos);
+                break;
+            }
+        }
+
         // Update the light
         let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
         self.light_uniform.position =
@@ -568,6 +586,14 @@ impl State {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
+            });
+
+
+            let instance_data = self.block_entites.values().map(Instance::to_raw).collect::<Vec<_>>();
+            let instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
             });
 
         {
@@ -596,10 +622,14 @@ impl State {
                 }),
             });
 
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+
+         
+            render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+
 
             render_pass.set_pipeline(&self.render_pipeline);
             let block_instances = self.block_entites.values();
+            println!("Rendering {} blocks", block_instances.len());
             render_pass.draw_model_instanced(
                 &self.obj_model,
                 0..block_instances.len() as u32,

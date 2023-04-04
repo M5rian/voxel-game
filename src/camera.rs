@@ -44,6 +44,14 @@ impl Camera {
             Vector3::unit_y(),
         )
     }
+
+    pub fn yaw(&self) -> Rad<f32> {
+        self.yaw
+    }
+
+    pub fn pitch(&self) -> Rad<f32> {
+        self.pitch
+    }
 }
 
 pub struct Projection {
