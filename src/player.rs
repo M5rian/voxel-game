@@ -1,5 +1,5 @@
 use cgmath::*;
-use std::f32::consts::FRAC_PI_2;
+use std::{f32::consts::FRAC_PI_2, ops::Add};
 use winit::{dpi::PhysicalPosition, event::*};
 
 const PITCH_CLAMP: Rad<f32> = Rad(FRAC_PI_2 - 0.0001);
@@ -93,6 +93,25 @@ impl Player {
         self.yaw += Rad(rotation_x_delta) * inputs.sensitivity * dt;
         self.pitch -= Rad(rotation_y_delta) * inputs.sensitivity * dt;
         self.pitch = Rad(self.pitch.0.clamp(-PITCH_CLAMP.0, PITCH_CLAMP.0));
+    }
+
+    pub fn looking_at(&self, world: &crate::world::World) -> Option<Vector3<i32>> {
+        let (pitch_sin, pitch_cos) = self.pitch().sin_cos();
+        let (yaw_sin, yaw_cos) = self.yaw().sin_cos();
+        let forward = Vector3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize();
+        let player_position = self.position;
+        let player_radius = 8;
+
+        let mut ray_coords = Vector3::new(player_position.x, player_position.y, player_position.z);
+        for _ in 0..player_radius {
+            ray_coords = ray_coords.add(forward);
+            let pos = ray_coords.map(|value| value.round() as i32);
+            if world.blocks().contains_key(&pos) {
+                println!("found block");
+                return Some(pos);
+            }
+        }
+        None
     }
 }
 

@@ -153,6 +153,23 @@ impl State {
                     },
                 ..
             } => self.camera_controller.process_keyboard(*key, *state),
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *state == ElementState::Pressed {
+                    if *button == MouseButton::Left {
+                        if let Some(coords) = self.player.looking_at(&self.world) {
+                            self.world.destroy(&coords);
+                        }
+                    }
+                    if *button == MouseButton::Right {
+                        if let Some(coords) = self.player.looking_at(&self.world) {
+                            let mut modified_coords = coords;
+                            modified_coords.y += 1;
+                            self.world.place(modified_coords);
+                        }
+                    }
+                }
+                true
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.camera_controller.process_mouse(position.clone());
                 true
@@ -163,24 +180,6 @@ impl State {
 
     fn update(&mut self, dt: std::time::Duration) {
         self.player.update(&mut self.camera_controller, dt);
-
-        let player = &self.player;
-        let (pitch_sin, pitch_cos) = player.pitch().sin_cos();
-        let (yaw_sin, yaw_cos) = player.yaw().sin_cos();
-        let forward = Vector3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize();
-        let player_position = player.position;
-        let player_radius = 8;
-
-        let mut ray_coords = Vector3::new(player_position.x, player_position.y, player_position.z);
-        for _ in 0..player_radius {
-            ray_coords = ray_coords.add(forward);
-            let pos = ray_coords.map(|value| value.round() as i32);
-            if self.world.blocks().contains_key(&pos) {
-                println!("found block");
-                self.world.destroy(&pos);
-                break;
-            }
-        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

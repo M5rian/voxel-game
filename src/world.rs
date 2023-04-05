@@ -67,4 +67,12 @@ impl World {
     pub fn destroy(&mut self, coords: &Vector3<i32>) {
         self.blocks.remove(coords);
     }
+
+    pub fn place(&mut self, coords: Vector3<i32>) {
+        let instance = Instance {
+            position: coords.map(|v| v as f32),
+            rotation: Quaternion::zero(),
+        };
+        self.blocks.insert(coords, instance);
+    }
 }
