@@ -91,7 +91,7 @@ impl Player {
         //println!("input: {}", rotation_x_delta);
 
         self.yaw += Rad(rotation_x_delta) * inputs.sensitivity * dt;
-        self.pitch += Rad(rotation_y_delta) * inputs.sensitivity * dt;
+        self.pitch -= Rad(rotation_y_delta) * inputs.sensitivity * dt;
         self.pitch = Rad(self.pitch.0.clamp(-PITCH_CLAMP.0, PITCH_CLAMP.0));
     }
 }
