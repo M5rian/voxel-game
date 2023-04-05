@@ -1,7 +1,6 @@
 use cgmath::*;
 use std::f32::consts::FRAC_PI_2;
-use winit::dpi::PhysicalPosition;
-use winit::event::*;
+use winit::{dpi::PhysicalPosition, event::*};
 
 const PITCH_CLAMP: Rad<f32> = Rad(FRAC_PI_2 - 0.0001);
 
@@ -48,8 +47,8 @@ impl Player {
         inputs: &mut crate::player::CameraController,
         dt: std::time::Duration,
     ) {
-        self.camera.update(&self.position, self.pitch(), self.yaw());
         self.update_position(inputs, dt);
+        self.camera.update(&self.position, self.pitch(), self.yaw());
     }
 
     fn update_position(
@@ -72,12 +71,28 @@ impl Player {
         self.position.y += (inputs.amount_up - inputs.amount_down) * inputs.speed * dt;
 
         // Rotate
-        self.yaw += Rad(inputs.rotate_horizontal) * inputs.sensitivity * dt;
-        self.pitch += Rad(-inputs.rotate_vertical) * inputs.sensitivity * dt;
-        self.pitch = Rad(self.pitch.0.clamp(-PITCH_CLAMP.0, PITCH_CLAMP.0));
+        let mouse_average_x: f64 = inputs
+            .mouse_position_history
+            .iter()
+            .map(|position| position.x)
+            .sum::<f64>()
+            / CameraController::MOUSE_HISTORY_BUFFER_SIZE as f64;
+        let mouse_average_y: f64 = inputs
+            .mouse_position_history
+            .iter()
+            .map(|position| position.y)
+            .sum::<f64>()
+            / CameraController::MOUSE_HISTORY_BUFFER_SIZE as f64;
+        let rotation_x_delta = (mouse_average_x - inputs.last_mouse_position_average_x) as f32;
+        let rotation_y_delta = (mouse_average_y - inputs.last_mouse_position_average_y) as f32;
+        inputs.last_mouse_position_average_x = mouse_average_x;
+        inputs.last_mouse_position_average_y = mouse_average_y;
 
-        inputs.rotate_horizontal = 0.0;
-        inputs.rotate_vertical = 0.0;
+        //println!("input: {}", rotation_x_delta);
+
+        self.yaw += Rad(rotation_x_delta) * inputs.sensitivity * dt;
+        self.pitch += Rad(rotation_y_delta) * inputs.sensitivity * dt;
+        self.pitch = Rad(self.pitch.0.clamp(-PITCH_CLAMP.0, PITCH_CLAMP.0));
     }
 }
 
@@ -89,14 +104,16 @@ pub struct CameraController {
     amount_backward: f32,
     amount_up: f32,
     amount_down: f32,
-    rotate_horizontal: f32,
-    rotate_vertical: f32,
-    scroll: f32,
+    mouse_position_history: [PhysicalPosition<f64>; CameraController::MOUSE_HISTORY_BUFFER_SIZE],
+    mouse_position_history_index: usize,
+    last_mouse_position_average_x: f64,
+    last_mouse_position_average_y: f64,
     speed: f32,
     sensitivity: f32,
 }
 
 impl CameraController {
+    const MOUSE_HISTORY_BUFFER_SIZE: usize = 10;
     pub fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
             amount_left: 0.0,
@@ -105,9 +122,11 @@ impl CameraController {
             amount_backward: 0.0,
             amount_up: 0.0,
             amount_down: 0.0,
-            rotate_horizontal: 0.0,
-            rotate_vertical: 0.0,
-            scroll: 0.0,
+            mouse_position_history: [PhysicalPosition::new(0.0, 0.0);
+                CameraController::MOUSE_HISTORY_BUFFER_SIZE],
+            mouse_position_history_index: 0,
+            last_mouse_position_average_x: 0.0,
+            last_mouse_position_average_y: 0.0,
             speed,
             sensitivity,
         }
@@ -148,16 +167,9 @@ impl CameraController {
         }
     }
 
-    pub fn process_mouse(&mut self, mouse_dx: f64, mouse_dy: f64) {
-        self.rotate_horizontal = mouse_dx as f32;
-        self.rotate_vertical = mouse_dy as f32;
-    }
-
-    pub fn process_scroll(&mut self, delta: &MouseScrollDelta) {
-        self.scroll = match delta {
-            // I'm assuming a line is about 100 pixels
-            MouseScrollDelta::LineDelta(_, scroll) => -scroll * 0.5,
-            MouseScrollDelta::PixelDelta(PhysicalPosition { y: scroll, .. }) => -*scroll as f32,
-        };
+    pub fn process_mouse(&mut self, position: PhysicalPosition<f64>) {
+        self.mouse_position_history[self.mouse_position_history_index] = position;
+        self.mouse_position_history_index =
+            (self.mouse_position_history_index + 1) % CameraController::MOUSE_HISTORY_BUFFER_SIZE;
     }
 }

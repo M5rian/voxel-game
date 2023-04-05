@@ -1,19 +1,20 @@
-use std::{ops::Add};
+use std::ops::Add;
 
-use camera::{Camera};
-use cgmath::{Deg, Angle, Vector3, InnerSpace};
+use camera::Camera;
+use cgmath::{Angle, Deg, InnerSpace, Vector2, Vector3};
 use player::Player;
 use winit::{
+    dpi::PhysicalPosition,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-mod player;
-mod model;
-mod resources;
-mod texture;
 mod block;
 mod camera;
+mod model;
+mod player;
+mod resources;
+mod texture;
 mod world;
 
 #[derive(Clone)]
@@ -106,7 +107,7 @@ struct LightUniform {
 }
 
 struct State {
-    world:crate::world::World,
+    world: crate::world::World,
     player: player::Player,
     camera_controller: player::CameraController,
 }
@@ -118,12 +119,12 @@ impl State {
             (0.0, 5.0, 10.0).into(),
             Deg(-90.0).into(),
             Deg(-20.0).into(),
-            camera
-        ); 
-        
+            camera,
+        );
+
         let world = crate::world::World::new(player.camera_mut()).await;
 
-        let camera_controller = player::CameraController::new(14.0, 3.5);
+        let camera_controller = player::CameraController::new(14.0, 3.0);
 
         Self {
             world,
@@ -134,7 +135,9 @@ impl State {
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.player.camera_mut().resize(new_size.width, new_size.height);
+            self.player
+                .camera_mut()
+                .resize(new_size.width, new_size.height);
             self.player.camera_mut().size = new_size;
         }
     }
@@ -150,8 +153,16 @@ impl State {
                     },
                 ..
             } => self.camera_controller.process_keyboard(*key, *state),
-            WindowEvent::MouseWheel { delta, .. } => {
-                self.camera_controller.process_scroll(delta);
+            WindowEvent::CursorMoved { position, .. } => {
+                self.camera_controller.process_mouse(position.clone());
+                /*
+                 // Reset mouse position
+                let window = &state.player.camera().window;
+                let window_size = window.inner_size();
+                window.set_cursor_position(PhysicalPosition::new(
+                    window_size.width / 2,
+                    window_size.height / 2,
+                )); */
                 true
             }
             _ => false,
@@ -161,17 +172,16 @@ impl State {
     fn update(&mut self, dt: std::time::Duration) {
         self.player.update(&mut self.camera_controller, dt);
 
-
         let player = &self.player;
         let (pitch_sin, pitch_cos) = player.pitch().sin_cos();
         let (yaw_sin, yaw_cos) = player.yaw().sin_cos();
         let forward = Vector3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize();
         let player_position = player.position;
         let player_radius = 8;
-        
-        let mut ray_coords = Vector3::new(player_position.x,player_position.y,player_position.z);
+
+        let mut ray_coords = Vector3::new(player_position.x, player_position.y, player_position.z);
         for _ in 0..player_radius {
-            ray_coords =  ray_coords.add(forward);
+            ray_coords = ray_coords.add(forward);
             let pos = ray_coords.map(|value| value.round() as i32);
             if self.world.blocks().contains_key(&pos) {
                 println!("found block");
@@ -179,7 +189,6 @@ impl State {
                 break;
             }
         }
-        
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -203,20 +212,11 @@ pub async fn run() {
         *control_flow = ControlFlow::Poll;
         match event {
             Event::MainEventsCleared => state.player.camera_mut().window.request_redraw(),
-            
-            Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion{ delta, },
-                .. // We're not using device_id currently
-            } => {
-                state.camera_controller.process_mouse(delta.0, delta.1)
-            }
-            
             Event::WindowEvent {
                 ref event,
                 window_id,
             } if window_id == state.player.camera_mut().window.id() && !state.input(event) => {
                 match event {
-                    #[cfg(not(target_arch="wasm32"))]
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
                         input:
@@ -236,8 +236,10 @@ pub async fn run() {
                     _ => {}
                 }
             }
-            
-            Event::RedrawRequested(window_id) if window_id == state.player.camera_mut().window.id() => {
+
+            Event::RedrawRequested(window_id)
+                if window_id == state.player.camera_mut().window.id() =>
+            {
                 let now = std::time::Instant::now();
                 let dt = now - last_render_time;
                 last_render_time = now;
@@ -245,7 +247,9 @@ pub async fn run() {
                 match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state.resize(state.player.camera().size),
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        state.resize(state.player.camera().size)
+                    }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // We're ignoring timeouts
