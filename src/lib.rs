@@ -124,7 +124,7 @@ impl State {
 
         let world = crate::world::World::new(player.camera_mut()).await;
 
-        let camera_controller = player::CameraController::new(14.0, 3.0);
+        let camera_controller = player::CameraController::new(14.0, 1.2);
 
         Self {
             world,
@@ -155,14 +155,6 @@ impl State {
             } => self.camera_controller.process_keyboard(*key, *state),
             WindowEvent::CursorMoved { position, .. } => {
                 self.camera_controller.process_mouse(position.clone());
-                /*
-                 // Reset mouse position
-                let window = &state.player.camera().window;
-                let window_size = window.inner_size();
-                window.set_cursor_position(PhysicalPosition::new(
-                    window_size.width / 2,
-                    window_size.height / 2,
-                )); */
                 true
             }
             _ => false,
