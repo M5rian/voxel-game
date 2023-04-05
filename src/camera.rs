@@ -343,7 +343,6 @@ impl Camera {
 
             render_pass.set_pipeline(&self.render_pipeline);
             let block_instances = world.blocks().values();
-            println!("Rendering {} blocks", block_instances.len());
             render_pass.draw_model_instanced(
                 &world.obj_model,
                 0..block_instances.len() as u32,
