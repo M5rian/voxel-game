@@ -99,7 +99,7 @@ impl Camera {
         let depth_map =
             crate::texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let camera_projection = Projection::new(config.width, config.height, Deg(45.0), 0.1, 100.0);
+        let camera_projection = Projection::new(config.width, config.height, Deg(45.0), 0.1, 200.0);
         let camera_uniform = CameraUniform::new();
 
         let texture_bind_group_layout = Camera::create_texture_bindings(&device);
