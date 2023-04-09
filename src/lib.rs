@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::{ops::Add, time::Duration};
 
 use camera::Camera;
 use cgmath::{Angle, Deg, InnerSpace, Vector2, Vector3};
@@ -179,6 +179,8 @@ impl State {
     }
 
     fn update(&mut self, dt: std::time::Duration) {
+        let fps = 1.0 / dt.as_secs_f32();
+        println!("FPS {:.2}", fps);
         self.player.update(&mut self.camera_controller, dt);
     }
 
