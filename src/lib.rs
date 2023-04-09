@@ -163,7 +163,7 @@ impl State {
                     if *button == MouseButton::Right {
                         if let Some(coords) = self.player.looking_at(&self.world) {
                             let mut modified_coords = coords;
-                            modified_coords.y += 1;
+                            modified_coords.y += 2;
                             self.world.place(modified_coords);
                         }
                     }
